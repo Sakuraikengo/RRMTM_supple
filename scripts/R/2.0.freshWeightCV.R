@@ -1,0 +1,268 @@
+machine <- c("M100", "M100", "P4M")
+year <- c("2019", "2020", "2021")
+source("scripts/R/1.functionCode.R")
+
+#' # 0. Read packages
+options(stringsAsFactors = FALSE)
+library(doParallel)
+library(lme4)
+library(RAINBOWR)
+library(stringr)
+library(psych)
+library(ggplot2)
+library(corrplot)
+
+# make the folder
+baseFolder <- "midstream/2.0.freshWeightCV/"
+if (!dir.exists(baseFolder)) {
+  dir.create(baseFolder)
+}
+
+# read the genome data
+amat0 <- as.matrix(read.csv("data/genome/amat173583SNP.csv", row.names = 1, header = T))
+colnames(amat0)[colnames(amat0) == "X5002T"] <- "5002T"
+colnames(amat0)[colnames(amat0) == "HOUJAKU_KUWAZU"] <- "Houjaku Kuwazu"
+rownames(amat0)[rownames(amat0) == "HOUJAKU_KUWAZU"] <- "Houjaku Kuwazu"
+
+# set the root folder
+rootFolder <- "data/MSdata/0.3.dataBind/"
+
+# set the condition
+condition <- c("C","W10", "D10", "D")
+treatment <- c("W1", "W2", "W3", "W4")
+
+# set the matrix to input the freshWeight data
+fwMat <- matrix(NA, nrow = nrow(amat0), ncol = length(treatment))
+rownames(fwMat) <- rownames(amat0)
+colnames(fwMat) <- treatment
+
+fwMean <- matrix(NA, nrow = length(year), ncol = length(condition))
+rownames(fwMean) <- year
+colnames(fwMean) <- condition
+
+fwSE <- matrix(NA, nrow = length(year), ncol = length(condition))
+rownames(fwSE) <- year
+colnames(fwSE) <- condition
+
+fwList <- foreach(eachDataInd = 1:length(machine), .packages = c("stringr")) %do% {
+  # eachDataInd <- 3
+  
+  # make the save folder
+  eachYear <- year[eachDataInd]
+  eachMachine <- machine[eachDataInd]
+  saveFolder <- paste0(baseFolder, eachYear, "/", eachMachine, "/")
+  if (!dir.exists(saveFolder)) {
+    dir.create(saveFolder, recursive = T)
+  }
+  
+  # data folder
+  dataFolder <- paste0(rootFolder, eachYear, "/", eachMachine, "/")
+  dataDay0 <- list.files(dataFolder, pattern = ".csv")
+  dataDay <- unique(str_sub(dataDay0, start = 1, end = 4))
+  
+  # set the matrix to input the genomic heritablity
+  index <- paste0("freshWeight", treatment)
+  h2Mat <- matrix(NA, nrow = 1, ncol = length(index))
+  rownames(h2Mat) <- "h2"
+  colnames(h2Mat) <- index
+  
+  # read the fresh weight data
+  dayInd <- 1
+  theDay <- dataDay[dayInd]
+  dataAll <- read.csv(paste0(dataFolder, theDay, "_medianPheno.csv"), 
+                      header = T, row.names = 1)
+  dataAll <- na.omit(dataAll)
+  dataAll <- dataAll[dataAll$variety %in% colnames(amat0), ]
+  
+  # select the variety which have value over all treatments
+  selVariety <- names(table(dataAll$variety))[table(dataAll$variety) == 4]
+  
+  # remove varieties some years don't have data
+  selVariety <- selVariety[!(selVariety %in% c("GmJMC002", "GmJMC005", "GmJMC008", 
+                                               "GmJMC052", "GmJMC081", "GmJMC088", 
+                                               "GmJMC090", "GmWMC019", "GmWMC020", 
+                                               "GmWMC170"))]
+  # remove varieties which have irregular values
+  selVariety <- selVariety[!(selVariety %in% c("GmWMC138", "GmWMC150", "GmWMC187",
+                                               "GmWMC020", "GmWMC113", "GmJMC088",
+                                               "GmWMC020", "GmJMC090", "GmWMC113",
+                                               "GmJMC081", "GmWMC019", "GmJMC052",
+                                               "GmJMC008", "GmJMC002", "GmWMC113", 
+                                               "GmWMC157", "GmJMC043", "GmWMC087"))]
+  
+  write.csv(selVariety, file = paste0(saveFolder, "selVariety.csv"))
+  dataAll <- dataAll[dataAll$variety %in% selVariety, ]
+  treatment <- unique(dataAll$treatment)
+  dataList <- lapply(treatment, function(treatmentEach) {
+    # treatmentEach <- treatment[[1]]
+    dataEach <- dataAll[dataAll$treatment == treatmentEach, ]
+    dataEach <- dataEach[order(dataEach$variety), ]
+    return(dataEach)
+  })
+  
+  List2Mat <- function(dataList, trait) {
+    traitList <- lapply(dataList, function(dataListEach) {
+      # dataListEach <- dataList[[1]]
+      traitEach <- dataListEach[, trait]
+      names(traitEach) <- dataListEach[, "variety"]
+      return(traitEach)
+    })
+    traitAll <- do.call(what = cbind, args = traitList)
+    return(traitAll)
+  }
+  freshWeightAll0 <- List2Mat(dataList = dataList, trait = "freshWeight")
+  colnames(freshWeightAll0) <- treatment
+  # freshWeightAll <- freshWeightAll0[, c("W1", "W4")]
+  freshWeightAll <- freshWeightAll0
+  
+  # calculate the mean and standard error
+  fwMean[eachDataInd, ] <- round(apply(freshWeightAll, 2, mean), 2)
+  SE <- function(x) sd(x)/sqrt(length(x))
+  fwSE[eachDataInd, ] <- round(apply(freshWeightAll, 2, SE), 2)
+  
+  freshWeightAllScaled <- scale(freshWeightAll)
+  
+  fwMat[rownames(freshWeightAllScaled), ] <- freshWeightAllScaled
+  
+  pdf(paste0(saveFolder, "freshWeightAllboxplot.pdf"))
+  boxplot(freshWeightAll)
+  matplot(t(scale(freshWeightAll)), type = "l")
+  dev.off()
+  
+  colnames(freshWeightAll) <- c("C", "W5", "W10", "D")
+  
+  write.csv(freshWeightAllScaled, file = paste0(saveFolder, "biomassAll.csv"))
+  
+  # visualize the dry weight correlation
+  png(paste0(saveFolder, "freshWeightCorEach.png"),
+      width = 1440, height = 1440, res = 214)
+  pairs.panels(freshWeightAllScaled)
+  # pairs(biomass)
+  dev.off()
+  
+  amatEach <- amat0[rownames(freshWeightAllScaled), rownames(freshWeightAllScaled)]
+  
+  # make amat list for each trait data
+  amatZ <- design.Z(pheno.labels = rownames(freshWeightAllScaled),
+                    geno.names = rownames(amatEach))
+  amatList <- list(Z = amatZ,
+                   K = amatEach)
+  # set each ZETA 
+  ZETA <- list(amatList = amatList)
+  
+  for (targetTraitEachInd in 1:ncol(freshWeightAllScaled)) {
+    # targetTraitEachInd <- 1
+    targetTraitEach <- scale(freshWeightAllScaled[, targetTraitEachInd])
+    names(targetTraitEach) <- rownames(freshWeightAllScaled)
+    
+    # mmfit <- mixed.solve(targetTraitEach, K = amatEach)
+    mmfit <- EMM.cpp(y = targetTraitEach, ZETA = ZETA)
+    h2Mat[1, targetTraitEachInd] <- mmfit$Vu / (mmfit$Vu + mmfit$Ve)
+    # plot(targetTraitEach, mmfit$u)
+  }
+  write.csv(h2Mat, paste0(saveFolder, "h2freshWeight.csv"))
+  return(freshWeightAll)
+}
+
+# check the variety name
+# names(table(unlist(lapply(fwList, rownames)))[table(unlist(lapply(fwList, rownames))) != 3])
+
+# save the fresh weight mean and standard error
+write.csv(fwMean, paste0(baseFolder, "freshWeightMean.csv"))
+write.csv(fwSE, paste0(baseFolder, "freshWeightSE.csv"))
+
+# make the freshWeight data matrix (3 year * 4 treatments)
+dataAll0 <- do.call(what = cbind, args = fwList)
+colnames(dataAll0) <- paste0(rep(year, each = length(condition)), "_", 
+                             rep(condition, length(machine)))
+dataAll <- na.omit(dataAll0)
+
+# calculate the coefficient of variation of "control" and "drought"
+Variance <- function(x) {
+  var(x) * (length((x) - 1) / length(x))
+}
+freshWeightSel <- dataAll[, !grepl("C", colnames(dataAll))]
+
+# min max normalization
+freshWeightSel <- apply(freshWeightSel, 2, function(eachFW) {
+  # eachFW <- freshWeightSel[, 1]
+  scaledFW <- (eachFW - min(eachFW)) / (max(eachFW) - min(eachFW))
+  return(scaledFW)
+})
+freshWeightVar <- diag(Variance(t(freshWeightSel)))
+freshWeightSd <- sqrt(freshWeightVar)
+freshWeightMean <- apply(freshWeightSel, MARGIN = 1, mean, na.rm = T)
+freshWeightCV <- (freshWeightSd / freshWeightMean) * 100
+sort(freshWeightCV, decreasing = T)
+hist(freshWeightCV)
+
+# save the CV data
+write.csv(freshWeightCV, file = paste0(baseFolder, "freshWeightCV.csv"))
+selVariety <- names(freshWeightCV)
+write.csv(selVariety, file = paste0(baseFolder, "selVariety.csv"))
+
+# visualize the relationships among fresh weight
+biomassAll <- cbind(dataAll, CV = freshWeightCV)
+write.csv(biomassAll, file = paste0(baseFolder, "biomassAll.csv"))
+
+pdf(paste0(baseFolder, "freshWeightAll.pdf"))
+psych::pairs.panels(dataAll)
+matplot(t(scale(dataAll)), type = "l")
+boxplot(freshWeightSel)
+psych::pairs.panels(biomassAll)
+boxplot(freshWeightCV)
+dev.off()
+
+# visualize the pairs plot by "png"
+colnames(biomassAll) <- c("2019_C", "2019_W5", "2019_D10", "2019_D", 
+                          "2020_C", "2020_D10", "2020_W10", "2020_D",
+                          "2021_C", "2021_D10", "2021_W10", "2021_D", 
+                          "CV")
+biomassSel <- biomassAll[, c("2019_W5", "2019_D10", "2019_D", 
+                             "2020_W10", "2020_D10", "2020_D",
+                             "2021_W10", "2021_D10", "2021_D", 
+                             "CV")]
+png(paste0(baseFolder, "pairsPlot.png"), 
+    width = 1440, height = 1440, res = 214)
+psych::pairs.panels(biomassSel, smooth = F, ellipses = F)
+dev.off()
+
+# make the boxplot using ggplot2
+biomassOnly <- biomassSel[, -ncol(biomassSel)]
+biomassLong <- WideToLong(biomassOnly, 
+                          dfRowInd = rownames(biomassOnly), 
+                          dfColInd = colnames(biomassOnly))
+yearVec <- str_sub(biomassLong[, 2], start = 1, end = 4)
+treatmentVec <- str_sub(biomassLong[, 2], start = 6)
+
+dfLong <- data.frame(FreshWeight = biomassLong[, 1], 
+                     Year = yearVec, 
+                     Treatment = treatmentVec, 
+                     Variety = biomassLong[, 3])
+dfLong$Treatment <- factor(dfLong$Treatment, levels = c("W5", "W10", "D10", "D"))
+
+g <- ggplot(dfLong, aes(x = Year, y = FreshWeight, fill = Treatment)) + 
+  geom_boxplot() + 
+  scale_fill_manual(values = c("olivedrab3", "lightskyblue1", "darkgoldenrod1", "chocolate2")) + 
+  labs(y = "Fresh Weight (g)") + 
+  theme(text = element_text(size = 15))
+png(paste0(baseFolder, "boxplotFreshWeight.png"), 
+    width = 1440, height = 1440, res = 214)
+print(g)
+dev.off()
+
+# calculate the genomic heritability
+amatEach <- amat0[names(freshWeightCV), names(freshWeightCV)]
+
+# make amat list for each trait data
+amatZ <- design.Z(pheno.labels = names(freshWeightCV),
+                  geno.names = rownames(amatEach))
+amatList <- list(Z = amatZ,
+                 K = amatEach)
+# set each ZETA 
+ZETA <- list(amatList = amatList)
+# mmfit <- mixed.solve(targetTraitEach, K = amatEach)
+mmfit <- EMM.cpp(y = scale(freshWeightCV), ZETA = ZETA)
+print(mmfit$Vu / (mmfit$Vu + mmfit$Ve))
+plot(freshWeightCV, mmfit$u)
+
