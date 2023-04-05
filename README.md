@@ -1,8 +1,8 @@
 # RRMTM_supple
 
-Data which was used in the "Evaluating drought tolerance stability in soybean by the response of irrigation change captured from time-series multi-spectral data" was uploaded here.
+Data which was used in the "Evaluating drought tolerance stability in soybean by the response of irrigation change captured from time-series multispectral data" was uploaded here.
 
-If you want to watch the "supplementary_data", please click the "supplementary_data.zip". Then, Download the zip file. 
+If you want to see the raw data which is used in this manuscript, please click the "supplementary.zip". Then, Download the zip file. 
 
 ___
 * scripts
