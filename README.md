@@ -2,7 +2,7 @@
 
 Data which was used in the "Evaluating drought tolerance stability in soybean by the response of irrigation change captured from time-series multispectral data" was uploaded here.
 
-If you want to see the raw data which is used in this manuscript, please click the "supplementary.zip". Then, Download the zip file. 
+If you want to see the raw data which is used in this manuscript, please click the "supplementary.zip" and "download" button. Then, Download the zip file. 
 
 ___
 * scripts
