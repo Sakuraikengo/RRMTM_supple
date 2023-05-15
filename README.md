@@ -1,8 +1,12 @@
 # RRMTM_supple
 
 Data which was used in the "Evaluating drought tolerance stability in soybean by the response of irrigation change captured from time-series multispectral data" was uploaded here.
-
-If you want to see the raw data which is used in this manuscript, please click the "supplementary.zip" and "download" button. Then, Download the zip file. 
+Because genome file and raw data of MS data were too large to upload, we can't run the below code.
+* 0.1.makeAmat.R
+* 0.2.spectralValue.R
+* 0.3.dataBind.R
+* 0.4.timeSeriesMS.R
+Please run from the "2.0.freshWeightCV.R"
 
 ___
 * scripts
